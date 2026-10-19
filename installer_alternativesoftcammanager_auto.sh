@@ -4,7 +4,7 @@
 # ==========================================================
 # SCRIPT : DOWNLOAD AND INSTALL ALTERNATIVE SOFTCAM MANAGER
 # Notes  : Reads the latest version from ver.txt, downloads and
-#          validates the matching DEB, removes earlier
+#          validates the matching DEB, removes earlier time-sync
 #          packages and plugin folders, installs, verifies and restarts
 #          Enigma2 automatically without asking questions.
 # ==========================================================
@@ -68,6 +68,10 @@ download_file() {
 
 validate_package() {
     [ -s "$TEMP_PACKAGE" ] || return 1
+    if [ "$PACKAGE_MANAGER" = 'opkg' ]; then
+        [ "$(head -c 7 "$TEMP_PACKAGE" 2>/dev/null)" = '!<arch>' ] || return 1
+        return 0
+    fi
     have dpkg-deb || return 1
     dpkg-deb --info "$TEMP_PACKAGE" >/dev/null 2>&1 || return 1
     DOWNLOADED_NAME=$(dpkg-deb -f "$TEMP_PACKAGE" Package 2>/dev/null) || return 1
@@ -121,6 +125,10 @@ detect_python() {
 
 package_registered() {
     CANDIDATE="$1"
+    if [ "$PACKAGE_MANAGER" = 'opkg' ]; then
+        opkg list-installed 2>/dev/null | grep -q "^$CANDIDATE - "
+        return $?
+    fi
     dpkg-query -W "$CANDIDATE" >/dev/null 2>&1
 }
 
@@ -130,14 +138,84 @@ remove_package() {
         return 0
     fi
     say "Purging old or incomplete package: $CANDIDATE"
-    dpkg --purge "$CANDIDATE" || return 1
+    if [ "$PACKAGE_MANAGER" = 'opkg' ]; then
+        opkg remove --force-depends "$CANDIDATE" || return 1
+    else
+        DREAMBOX_NTP_UI_REMOVE=1 dpkg --purge "$CANDIDATE" || return 1
+    fi
+}
+
+remove_version_1_0_traces() {
+    say 'Cleaning known stale time-sync files and plugin folders...'
+
+    if [ -d /run/systemd/system ] && have systemctl; then
+        systemctl stop merlin-ntp-sync.timer >/dev/null 2>&1 || true
+        systemctl disable merlin-ntp-sync.timer >/dev/null 2>&1 || true
+        systemctl stop merlin-ntp-sync.service >/dev/null 2>&1 || true
+        systemctl stop alternativesoftcammanager.timer >/dev/null 2>&1 || true
+        systemctl disable alternativesoftcammanager.timer >/dev/null 2>&1 || true
+        systemctl stop alternativesoftcammanager.service >/dev/null 2>&1 || true
+        systemctl stop alternativesoftcammanager-retry.service >/dev/null 2>&1 || true
+    fi
+
+    for OLD_FILE in \
+        /usr/bin/merlin-ntp-sync \
+        /usr/lib/merlin-ntp-sync.py \
+        /usr/lib/merlin-ntp-sync.pyc \
+        /lib/systemd/system/merlin-ntp-sync.service \
+        /lib/systemd/system/merlin-ntp-sync.timer \
+        /etc/systemd/system/enigma2.service.d/10-merlin-ntp-sync.conf \
+        /etc/rcS.d/S39merlin-ntp-sync \
+        /tmp/merlin-ntp-sync.log \
+        /etc/enigma2/settings.merlin-ntp.tmp \
+        /usr/bin/alternativesoftcammanager \
+        /usr/lib/alternativesoftcammanager.py \
+        /usr/lib/alternativesoftcammanager.pyc \
+        /lib/systemd/system/alternativesoftcammanager.service \
+        /lib/systemd/system/alternativesoftcammanager-retry.service \
+        /lib/systemd/system/alternativesoftcammanager.timer \
+        /etc/systemd/system/enigma2.service.d/10-alternativesoftcammanager.conf \
+        /etc/rcS.d/S39alternativesoftcammanager \
+        /tmp/alternativesoftcammanager.log \
+        /tmp/alternativesoftcammanager.lock \
+        /run/alternativesoftcammanager.success \
+        /tmp/alternativesoftcammanager_1.0.0_all.deb
+    do
+        if [ -e "$OLD_FILE" ] || [ -L "$OLD_FILE" ]; then
+            say "Removing old file: $OLD_FILE"
+            rm -f "$OLD_FILE" || return 1
+        fi
+    done
+
+    for OLD_CACHE in \
+        /usr/lib/__pycache__/merlin-ntp-sync*.pyc \
+        /usr/lib/__pycache__/alternativesoftcammanager*.pyc
+    do
+        if [ -e "$OLD_CACHE" ]; then
+            rm -f "$OLD_CACHE" || return 1
+        fi
+    done
+
+    if [ -d /run/systemd/system ] && have systemctl; then
+        systemctl daemon-reload || return 1
+        systemctl reset-failed merlin-ntp-sync.service >/dev/null 2>&1 || true
+        systemctl reset-failed alternativesoftcammanager.service >/dev/null 2>&1 || true
+        systemctl reset-failed alternativesoftcammanager-retry.service >/dev/null 2>&1 || true
+    fi
+
+    return 0
 }
 
 remove_old_versions() {
     remove_package "$PACKAGE_NAME" || return 1
-    remove_package 'enigma2-plugin-extensions-AlternativeSoftCamManager' || return 1
+    remove_package 'enigma2-plugin-systemplugins-dreamtimesync' || return 1
+    remove_package 'enigma2-plugin-extensions-dreamtimesync' || return 1
+    remove_version_1_0_traces || return 1
 
-    for OLD_PLUGIN_PATH in         /usr/lib/enigma2/python/Plugins/Extensions/AlternativeSoftCamManager
+    for OLD_PLUGIN_PATH in \
+        /usr/lib/enigma2/python/Plugins/SystemPlugins/DreamTimeSync \
+        /usr/lib/enigma2/python/Plugins/Extensions/DreamTimeSync \
+        /usr/lib/enigma2/python/Plugins/Extensions/AlternativeSoftCamManager
     do
         if [ -d "$OLD_PLUGIN_PATH" ]; then
             say "Removing old plugin directory: $OLD_PLUGIN_PATH"
@@ -148,20 +226,29 @@ remove_old_versions() {
 }
 
 install_package() {
-    dpkg -i --force-overwrite "$TEMP_PACKAGE"
+    if [ "$PACKAGE_MANAGER" = 'opkg' ]; then
+        opkg install --force-reinstall --force-overwrite --force-depends "$TEMP_PACKAGE"
+    else
+        dpkg -i --force-overwrite "$TEMP_PACKAGE"
+    fi
 }
 
 verify_installation() {
     PLUGIN_PATH='/usr/lib/enigma2/python/Plugins/Extensions/AlternativeSoftCamManager'
     [ -s "$PLUGIN_PATH/plugin.py" ] || return 1
     [ -s "$PLUGIN_PATH/Manager.py" ] || return 1
-    INSTALLED_VERSION=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null)
+    if [ "$PACKAGE_MANAGER" = 'opkg' ]; then
+        INSTALLED_VERSION=$(opkg list-installed 2>/dev/null | sed -n "s/^$PACKAGE_NAME - //p" | sed -n '1p')
+    else
+        INSTALLED_VERSION=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null)
+    fi
+    INSTALLED_VERSION=$(trim "$INSTALLED_VERSION")
     [ "$INSTALLED_VERSION" = "$PLUGIN_VERSION" ] || return 1
     return 0
 }
 
 show_success_popup() {
-    MESSAGE_TEXT="Alternative%20SoftCam%20Manager%20$PLUGIN_VERSION%20installed%20successfully.%0AThe%20receiver%20will%20reboot%20now."
+    MESSAGE_TEXT="Alternative%20SoftCam%20Manager%20$PLUGIN_VERSION%20installed%20successfully.%0AAutomatic%20time%20synchronization%20is%20active.%0AThe%20receiver%20will%20reboot%20now."
     if have wget; then
         wget -T 3 -t 1 -qO- "http://127.0.0.1/web/message?text=$MESSAGE_TEXT&type=1&timeout=8" >/dev/null 2>&1
     elif have curl; then
@@ -208,8 +295,15 @@ if [ "$(id -u 2>/dev/null)" != 0 ]; then
     exit 1
 fi
 
-if ! have dpkg || ! have dpkg-query || ! have dpkg-deb; then
-    say 'This installer requires a Dreambox image with dpkg and DEB support.'
+# DEB images (DreamOS) use dpkg; OpenATV, OpenPLi, VTi and similar use opkg with IPK.
+if have dpkg && have dpkg-query && have dpkg-deb; then
+    PACKAGE_MANAGER='dpkg'
+    PACKAGE_TYPE='deb'
+elif have opkg; then
+    PACKAGE_MANAGER='opkg'
+    PACKAGE_TYPE='ipk'
+else
+    say 'This installer requires an Enigma2 image with dpkg (DEB) or opkg (IPK) support.'
     exit 1
 fi
 
@@ -224,8 +318,7 @@ if [ $? -ne 0 ] || [ -z "$PLUGIN_VERSION" ]; then
     exit 1
 fi
 
-PACKAGE_TYPE='deb'
-PACKAGE_FILE="${PACKAGE_NAME}_${PLUGIN_VERSION}_all.deb"
+PACKAGE_FILE="${PACKAGE_NAME}_${PLUGIN_VERSION}_all.${PACKAGE_TYPE}"
 PACKAGE_URL="https://raw.githubusercontent.com/$REPO_USER/$REPO_NAME/$REPO_BRANCH/$RELEASES_DIR/$PACKAGE_FILE?nocache=$(date +%s)"
 TEMP_PACKAGE="/tmp/$PACKAGE_FILE"
 cleanup_temp_package() {
@@ -259,7 +352,7 @@ if ! download_file "$PACKAGE_URL" "$TEMP_PACKAGE"; then
     exit 1
 fi
 
-say 'Validating the downloaded DEB package...'
+say "Validating the downloaded $PACKAGE_TYPE package..."
 if ! validate_package; then
     say 'Downloaded package validation failed; installation aborted.'
     exit 1
@@ -286,6 +379,11 @@ if ! verify_installation; then
     exit 1
 fi
 
+if [ -f /tmp/alternativesoftcammanager.log ]; then
+    say ''
+    say 'Latest synchronization result:'
+    tail -n 5 /tmp/alternativesoftcammanager.log
+fi
 date
 
 cleanup_temp_package
