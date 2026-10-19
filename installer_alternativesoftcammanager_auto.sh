@@ -4,9 +4,9 @@
 # ==========================================================
 # SCRIPT : DOWNLOAD AND INSTALL ALTERNATIVE SOFTCAM MANAGER
 # Notes  : Reads the latest version from ver.txt, downloads and
-#          validates the matching DEB, removes earlier versions and
-#          plugin folders, installs, verifies and reboots
-#          the receiver automatically without asking questions.
+#          validates the matching DEB, removes earlier
+#          packages and plugin folders, installs, verifies and restarts
+#          Enigma2 automatically without asking questions.
 # ==========================================================
 #
 # One-command installation:
@@ -18,7 +18,6 @@
 
 PACKAGE_NAME='enigma2-plugin-extensions-alternativesoftcammanager'
 PLUGIN_TITLE='Alternative SoftCam Manager'
-PLUGIN_DIR='/usr/lib/enigma2/python/Plugins/Extensions/AlternativeSoftCamManager'
 
 REPO_USER='Saiedf'
 REPO_NAME='AlternativeSoftCamManager'
@@ -135,16 +134,16 @@ remove_package() {
 }
 
 remove_old_versions() {
-    # Earlier builds of this plugin may be registered under other package names.
     remove_package "$PACKAGE_NAME" || return 1
     remove_package 'enigma2-plugin-extensions-AlternativeSoftCamManager' || return 1
-    remove_package 'enigma2-plugin-extensions-altsoftcammanager' || return 1
 
-    # Leftovers of a removed or half-installed version; user settings stay in /etc/enigma2/settings.
-    if [ -d "$PLUGIN_DIR" ]; then
-        say "Removing old plugin directory: $PLUGIN_DIR"
-        rm -rf "$PLUGIN_DIR" || return 1
-    fi
+    for OLD_PLUGIN_PATH in         /usr/lib/enigma2/python/Plugins/Extensions/AlternativeSoftCamManager
+    do
+        if [ -d "$OLD_PLUGIN_PATH" ]; then
+            say "Removing old plugin directory: $OLD_PLUGIN_PATH"
+            rm -rf "$OLD_PLUGIN_PATH" || return 1
+        fi
+    done
     return 0
 }
 
@@ -153,12 +152,9 @@ install_package() {
 }
 
 verify_installation() {
-    for REQUIRED_FILE in plugin.py Manager.py Softcam.py Ecm.py Compat.py __init__.py ver.txt; do
-        if [ ! -s "$PLUGIN_DIR/$REQUIRED_FILE" ]; then
-            say "Missing installed file: $PLUGIN_DIR/$REQUIRED_FILE"
-            return 1
-        fi
-    done
+    PLUGIN_PATH='/usr/lib/enigma2/python/Plugins/Extensions/AlternativeSoftCamManager'
+    [ -s "$PLUGIN_PATH/plugin.py" ] || return 1
+    [ -s "$PLUGIN_PATH/Manager.py" ] || return 1
     INSTALLED_VERSION=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null)
     [ "$INSTALLED_VERSION" = "$PLUGIN_VERSION" ] || return 1
     return 0
