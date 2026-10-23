@@ -11,10 +11,10 @@
 # ==========================================================
 #
 # One-command installation:
-# wget -qO- "https://raw.githubusercontent.com/Saiedf/AlternativeSoftCamManager/main/installer_alternativesoftcammanager_auto.sh?nocache=$(date +%s)" | /bin/sh
+# wget -qO- "https://raw.githubusercontent.com/Saiedf/alternativesoftcammanager/main/installer_alternativesoftcammanager_auto.sh?nocache=$(date +%s)" | /bin/sh
 #
 # Alternative:
-# wget -O /tmp/installer_alternativesoftcammanager_auto.sh "https://raw.githubusercontent.com/Saiedf/AlternativeSoftCamManager/main/installer_alternativesoftcammanager_auto.sh?nocache=$(date +%s)" && chmod 755 /tmp/installer_alternativesoftcammanager_auto.sh && /bin/sh /tmp/installer_alternativesoftcammanager_auto.sh
+# wget -O /tmp/installer_alternativesoftcammanager_auto.sh "https://raw.githubusercontent.com/Saiedf/alternativesoftcammanager/main/installer_alternativesoftcammanager_auto.sh?nocache=$(date +%s)" && chmod 755 /tmp/installer_alternativesoftcammanager_auto.sh && /bin/sh /tmp/installer_alternativesoftcammanager_auto.sh
 # ==========================================================
 
 PACKAGE_NAME='enigma2-plugin-extensions-alternativesoftcammanager'
@@ -23,7 +23,7 @@ PLUGIN_TITLE='AlternativeSoftCamManager'
 PLUGIN_FOLDER='AlternativeSoftCamManager'
 
 REPO_USER='Saiedf'
-REPO_NAME='AlternativeSoftCamManager'
+REPO_NAME='alternativesoftcammanager'
 REPO_BRANCH='main'
 
 # Adjust once only if your GitHub layout is different
