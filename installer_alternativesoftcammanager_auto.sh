@@ -29,6 +29,7 @@ REPO_BRANCH='main'
 # Adjust once only if your GitHub layout is different
 VERSION_FILE_PATH='ver.txt'
 RELEASES_DIR='Releases'
+# Package URLs follow the version declared in ver.txt.
 
 DEB_DM920_PY2=''
 DEB_DM920_PY3=''
@@ -769,6 +770,24 @@ say ''
 
 download_package
 DOWNLOAD_RET=$?
+
+# If ver.txt changed between version lookup and package download, retry with the current version.
+if [ "$DOWNLOAD_RET" -ne 0 ]; then
+    NEW_VERSION=$(fetch_version)
+    if [ -n "$NEW_VERSION" ] && [ "$NEW_VERSION" != "$PLUGIN_VERSION" ]; then
+        PLUGIN_VERSION="$NEW_VERSION"
+        if [ "$PKG_TYPE" = 'deb' ]; then
+            PKG_FILE=$(pick_deb_file)
+        else
+            PKG_FILE=$(pick_ipk_file)
+        fi
+        MY_TMP_FILE="/tmp/$PKG_FILE"
+        build_url
+        say "Retrying updated package: $PKG_FILE"
+        download_package
+        DOWNLOAD_RET=$?
+    fi
+fi
 
 if [ $DOWNLOAD_RET -eq 0 ] && [ -s "$MY_TMP_FILE" ]; then
     say ''
